@@ -241,7 +241,7 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
     metrics_names = ['train_dsc','train_loss', 'train_acc', 'val_dsc', 'val_loss', 'val_acc'] 
     # start training
     num_training_samples = [i for i,_ in enumerate(train_dataset)][-1] + 1
-    checkpoint_filepath = os.path.join(results_directory, new_results_id + "_model_smi_supervised.keras")
+    checkpoint_filepath = os.path.join(results_directory, new_results_id + "_model_smi_supervised.h5")
 
     for epoch in range(epochs):
         print("\nepoch {}/{}".format(epoch+1,epochs))
