@@ -80,7 +80,7 @@ def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve
     for pattient_case in patient_cases:        
         path_patient_case = os.path.join(path_dataset, pattient_case)
         images_path = os.path.join(path_patient_case, 'images')
-        masks_path = os.path.join(path_patient_case, 'masks')
+        masks_path = os.path.join(path_patient_case, 'masks_nerves')
         list_all_imgs = os.listdir(images_path)
         list_all_masks = os.listdir(masks_path)
         all_files = os.listdir(path_patient_case)
