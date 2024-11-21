@@ -20,175 +20,9 @@ from sklearn.model_selection import train_test_split
 from absl import app, flags
 from absl.flags import FLAGS
 import yaml
-
-
-# model U-Net
-
-def res_conv_block(x, num_filters):
-    x = tf.keras.layers.Conv2D(num_filters, (3, 3), padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    skip = tf.keras.layers.Conv2D(num_filters, (3, 3), padding="same")(x)
-    skip = tf.keras.layers.Activation("relu")(skip)
-    skip = tf.keras.layers.BatchNormalization()(skip)
-
-    x = tf.keras.layers.Conv2D(num_filters, (3, 3), padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    x = tf.keras.layers.Add()([x, skip])
-    x = tf.keras.layers.Activation("relu")(x)
-
-    return x
-
-
-def build_model(input_size, num_filters = [64, 128, 256, 512]):
-    #num_filters = [16, 32, 48, 64]
-    
-    inputs = tf.keras.Input((input_size, input_size, 3))  
-    skip_x = []
-    x = inputs
-
-    ## Encoder
-    for f in num_filters:
-        x = res_conv_block(x, f)
-        skip_x.append(x)
-        x = tf.keras.layers.MaxPool2D((2, 2))(x)
-
-    ## Bridge
-    x = res_conv_block(x, num_filters[-1])
-
-    num_filters.reverse()
-    skip_x.reverse()
-    ## Decoder
-    for i, f in enumerate(num_filters):
-        x = tf.keras.layers.UpSampling2D((2, 2))(x)
-        xs = skip_x[i]
-        x = tf.keras.layers.Concatenate()([x, xs])
-        x = res_conv_block(x, f)
-
-    ## Output
-    x = tf.keras.layers.Conv2D(1, (1, 1), padding="same")(x)
-    x = tf.keras.layers.Activation("sigmoid")(x)
-
-    return Model(inputs, x)
-
-
-def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve_layer_imgs=False, max_samples=None):
-    list_cases = list()
-    for pattient_case in patient_cases:        
-        path_patient_case = os.path.join(path_dataset, pattient_case)
-        images_path = os.path.join(path_patient_case, 'images')
-        masks_path = os.path.join(path_patient_case, 'masks_nerves')
-        list_all_imgs = os.listdir(images_path)
-        list_all_masks = os.listdir(masks_path)
-        all_files = os.listdir(path_patient_case)
-        all_files = [f for f in all_files if f.endswith('csv')]
-        annotations_file = all_files[-1]
-        df_p_case = pd.read_csv(os.path.join(path_patient_case, annotations_file))
-        if nerve_layer_imgs:
-            list_imgs = df_p_case[df_p_case['nerve layer'] == 1]['image name'].tolist()
-        else:
-            list_imgs = df_p_case[~df_p_case['density-pre'].isna()]['image name'].tolist()
-        for j, img_name in enumerate(list_imgs):
-            name_image = ''.join([ img_name + '_.jpg'])
-            name_mask = ''.join(['mask_' + img_name + '_.jpg'])
-            if only_images:
-                path_img = os.path.join(images_path, name_image)
-                list_cases.append({'path_img': path_img,})   
-                
-            else:
-                if name_image in list_all_imgs and name_mask in list_all_masks:
-                    path_mask = os.path.join(masks_path, name_mask)
-                    path_img = os.path.join(images_path, name_image)
-                    list_cases.append({'path_img': path_img, 'path_mask':path_mask})    
-
-    return list_cases
-
-# TF dataset
-def read_img(dir_image, img_size=(256, 256)):
-    path_img = dir_image.decode()
-    original_img = cv2.imread(path_img)
-    img = cv2.resize(original_img, img_size, interpolation=cv2.INTER_AREA)
-    img = img / 255.
-    return img
-
-
-def read_mask(path, img_size=(256, 256)):
-    thresh = 127
-    path = path.decode()
-    x = cv2.imread(path)
-    x = cv2.cvtColor(x, cv2.COLOR_BGR2GRAY)
-    x = cv2.resize(x, img_size, interpolation=cv2.INTER_AREA)
-    thresh, x = cv2.threshold(x, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    x = x/255.0
-    x = np.expand_dims(x, axis=-1)
-    return x
-
-
-def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_mode=False, analyze_dataset=False, include_labels=True):
-    img_size = img_size
-    def tf_parse(x, y):
-        def _parse(x, y):
-            x = read_img(x, (img_size, img_size))
-            y = read_mask(y, (img_size, img_size))
-            return x, y
-
-        x, y = tf.numpy_function(_parse, [x, y], [tf.float64, tf.float64])
-        x.set_shape([img_size, img_size, 3])
-        y.set_shape([img_size, img_size, 1])
-        return x, y
-    
-    def tf_parse_v2(x):
-        def _parse(x):
-            x = read_img(x, (img_size, img_size))
-            return x
-
-        x = tf.numpy_function(_parse, [x], [tf.float64])
-        #x.set_shape([img_size, img_size, 3])
-        return x
-    
-    def configure_for_performance(dataset, batch_size):
-        dataset = dataset.repeat(1)
-        dataset = dataset.shuffle(buffer_size=10)
-        dataset = dataset.batch(batch_size, drop_remainder=True)        
-        dataset = dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-        return dataset
-
-
-    path_imgs = list()
-    path_masks = list()
-
-    if training_mode:
-        random.shuffle(annotations_dict)
-    
-    if include_labels:
-        for img_id in annotations_dict:
-            path_imgs.append(img_id.get('path_img'))
-            path_masks.append(img_id.get('path_mask'))
-        dataset = tf.data.Dataset.from_tensor_slices((path_imgs, path_masks))
-        dataset = dataset.map(tf_parse, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    else:
-        for img_id in annotations_dict:
-            path_imgs.append(img_id.get('path_img'))
-        dataset = tf.data.Dataset.from_tensor_slices((path_imgs))
-        dataset = dataset.map(tf_parse_v2, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-    
-    if analyze_dataset:
-        filenames_ds = tf.data.Dataset.from_tensor_slices(path_imgs)
-        dataset = tf.data.Dataset.zip(dataset, filenames_ds)
-
-    if training_mode:
-        dataset = configure_for_performance(dataset, batch_size=batch_size)
-    else:
-        dataset = dataset.batch(batch_size,  drop_remainder=True)
-
-    print(f'TF dataset with {int(len(path_imgs)/batch_size)} elements and {len(path_imgs)} images')
-
-    return dataset
-
+from utils import data_loaders as dl
+from models import Res_UNet as res_unet
+from utils import loss_functions as lf
 
 def custome_train(model, train_dataset, results_directory, new_results_id, epochs=2, learning_rate=0.001, 
                    val_dataset=None,patience=10):
@@ -202,12 +36,12 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
     def train_step(images, labels):
         with tf.GradientTape() as tape:
             predictions = model(images, training=True)
-            loss = dice_coef_loss(y_true=labels, y_pred=predictions)
+            loss = lf.dice_coef_loss(y_true=labels, y_pred=predictions)
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(grads_and_vars=zip(gradients, model.trainable_variables))
 
         train_loss_val = train_loss(loss)
-        train_dsc_val = dice_coef(labels, predictions)
+        train_dsc_val = lf.dice_coef(labels, predictions)
         train_dsc = train_dice_coef(train_dsc_val)
         return train_loss_val, train_dsc
 
@@ -216,10 +50,10 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
         # pred_teacher = teacher_model(images, training=False)
         # labels = tf.argmax(pred_teacher, axis=1)
         predictions = model(images, training=False)
-        v_loss = dice_coef_loss(labels, predictions)
+        v_loss = lf.dice_coef_loss(labels, predictions)
 
         val_loss = valid_loss(v_loss)
-        val_dsc_value = dice_coef(labels, predictions)
+        val_dsc_value = lf.dice_coef(labels, predictions)
         val_dsc = val_dice_coef(val_dsc_value)
         return val_loss, val_dsc
 
@@ -285,20 +119,6 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
     return [train_loss_hist, val_loss_hist, train_dsc_hist, val_dsc_hist]
 
 
-# Loss
-
-@tf.function
-def dice_coef(y_true, y_pred, smooth=1):
-    y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(y_pred, tf.float32)
-    intersection = tf.keras.backend.sum(y_true * y_pred, axis=[1, 2, 3])
-    union = tf.keras.backend.sum(y_true, axis=[1, 2, 3]) + tf.keras.backend.sum(y_pred, axis=[1, 2, 3])
-    return tf.keras.backend.mean((2. * intersection + smooth) / (union + smooth), axis=0)
-
-@tf.function
-def dice_coef_loss(y_true, y_pred):
-    return 1 - dice_coef(y_true, y_pred)
-
 
 def main(_argv):
     tf.keras.backend.clear_session()
@@ -334,22 +154,22 @@ def main(_argv):
     print('test cases:', len(test_cases))
     list_train_cases = list()
 
-    list_train_cases = build_list_dict_nerves(path_dataset, train_cases, only_images=False, nerve_layer_imgs=True)
+    list_train_cases = dl.build_list_dict_nerves(path_dataset, train_cases, only_images=False, nerve_layer_imgs=True)
     random.shuffle(list_train_cases)
     list_train_cases = list_train_cases[:5000]
-    list_val_cases = build_list_dict_nerves(path_dataset, val_cases, only_images=False)
-    list_test_cases = build_list_dict_nerves(path_dataset, test_cases)
+    list_val_cases = dl.build_list_dict_nerves(path_dataset, val_cases, only_images=False)
+    list_test_cases = dl.build_list_dict_nerves(path_dataset, test_cases)
 
-    train_ds = tf_dataset_semi_sup(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
-    val_ds = tf_dataset_semi_sup(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    train_ds = dl.tf_dataset_semi_sup(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    val_ds = dl.tf_dataset_semi_sup(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
     
     opt = tf.keras.optimizers.Adam(lr)
-    metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), dice_coef]
+    metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), lf.dice_coef]
     # Compile the model 
-    model = build_model(img_size, num_filters=num_filters)
+    model = res_unet.build_model(img_size, num_filters=num_filters)
     #model.summary()
     print('Compiling model')
-    model.compile(optimizer=opt, loss=dice_coef_loss, metrics=metrics)
+    model.compile(optimizer=opt, loss=lf.dice_coef_loss, metrics=metrics)
 
     training_time = datetime.now()
     new_results_id = ''.join([name_model, 
@@ -415,7 +235,7 @@ def main(_argv):
 
     # run the test 
 
-    new_test_ds = tf_dataset_semi_sup(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
+    new_test_ds = dl.tf_dataset_semi_sup(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
     name_files = list()
     dsc_val_list = list()
     plot_figs = False
@@ -430,7 +250,7 @@ def main(_argv):
         pred_mask = predictions[0]
         #resize_prediction = cv2.resize()
         #compare resized image 
-        dsc_value = dice_coef(label_batch, predictions)
+        dsc_value = lf.dice_coef(label_batch, predictions)
         dsc_val_list.append(dsc_value.numpy())
         name_file = file_path.numpy()[0].decode("utf-8")
         name_files.append(name_file)
