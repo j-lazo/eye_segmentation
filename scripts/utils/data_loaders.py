@@ -57,9 +57,21 @@ def read_mask(path, img_size=(256, 256), thresh_value=127):
     return x
 
 
-def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_mode=False, analyze_dataset=False, include_labels=True):
+def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_mode=False, analyze_dataset=False, include_labels=True,
+                        augment=False):
     img_size = img_size
     def tf_parse(x, y):
+        def _parse(x, y):
+            x = read_img(x, (img_size, img_size))
+            y = read_mask(y, (img_size, img_size))
+            return x, y
+
+        x, y = tf.numpy_function(_parse, [x, y], [tf.float64, tf.float64])
+        x.set_shape([img_size, img_size, 3])
+        y.set_shape([img_size, img_size, 1])
+        return x, y
+    
+    def tf_parse_augment(x, y):
         def _parse(x, y):
             x = read_img(x, (img_size, img_size))
             y = read_mask(y, (img_size, img_size))
@@ -185,9 +197,11 @@ def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_m
             path_imgs.append(img_id.get('path_img'))
             path_masks.append(img_id.get('path_mask'))
         dataset = tf.data.Dataset.from_tensor_slices((path_imgs, path_masks))
-        if training_mode:
+        if training_mode and augment:
             dataset = dataset.repeat(5)
-        dataset = dataset.map(tf_parse, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+            dataset = dataset.map(tf_parse_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        else:
+            dataset = dataset.map(tf_parse, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     else:
         for img_id in annotations_dict:
             path_imgs.append(img_id.get('path_img'))
