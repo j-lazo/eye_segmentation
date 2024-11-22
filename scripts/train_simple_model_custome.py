@@ -293,7 +293,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('max_epochs', 4, 'epochs')
     flags.DEFINE_integer('image_size', 64, 'input impage size')
     flags.DEFINE_integer('batch_size', 8, 'batch size')
-    flags.DEFINE_list('num_filers', [32,64,128,256,512,1024], 'mumber of filters per layer')
+    flags.DEFINE_list('num_filers', [32,64,128,256,512,1024, 1024], 'mumber of filters per layer')
 
     flags.DEFINE_string('type_training', '', 'eager_train or custom_training')
     flags.DEFINE_string('results_dir', os.path.join(os.getcwd(), 'results'), 'directory to save the results')
