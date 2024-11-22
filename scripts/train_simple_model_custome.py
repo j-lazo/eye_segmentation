@@ -160,7 +160,7 @@ def main(_argv):
     list_val_cases = dl.build_list_dict_nerves(path_dataset, val_cases, only_images=False)
     list_test_cases = dl.build_list_dict_nerves(path_dataset, test_cases)
 
-    train_ds = dl.tf_dataset_semi_sup(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    train_ds = dl.tf_dataset_semi_sup(list_train_cases, batch_size=batch_size, training_mode=True, augment=True, img_size=img_size)
     val_ds = dl.tf_dataset_semi_sup(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
     
     opt = tf.keras.optimizers.Adam(lr)
