@@ -6,6 +6,34 @@ import tensorflow as tf
 import numpy as np
 
 
+def build_list_dict_dendritic_cells(path_dataset, patient_cases, only_images=False, max_samples=None):
+    list_cases = list()
+    for pattient_case in patient_cases:        
+        path_patient_case = os.path.join(path_dataset, pattient_case)
+        images_path = os.path.join(path_patient_case, 'images')
+        masks_path = os.path.join(path_patient_case, 'new_masks_dendritic_cells')
+        list_all_imgs = os.listdir(images_path)
+        list_all_masks = os.listdir(masks_path)
+
+        all_files = os.listdir(path_patient_case)
+        all_files = [f for f in all_files if f.endswith('csv')]
+        annotations_file = all_files[-1]
+        
+        for j, name_mask in enumerate(list_all_masks):
+            name_image = name_mask.replace('mask_dendritic_', '')
+            path_mask = os.path.join(masks_path, name_mask)
+            path_img = os.path.join(images_path, name_image)
+
+            if only_images:
+                path_img = os.path.join(images_path, name_image)
+                list_cases.append({'path_img': path_img,})   
+                
+            else:
+                if os.path.isfile(path_img) and os.path.isfile(path_mask):
+                    list_cases.append({'path_img': path_img, 'path_mask':path_mask})    
+    
+    return list_cases
+
 def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve_layer_imgs=False, max_samples=None):
     list_cases = list()
     for pattient_case in patient_cases:        
