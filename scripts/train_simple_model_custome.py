@@ -90,7 +90,7 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
             progBar.update(idX+1, values=values) 
         
         train_loss_hist.append(train_loss_value.numpy())
-        train_dsc_hist.append(train_loss_value.numpy())
+        train_dsc_hist.append(training_metric.numpy())
             
         if val_dataset:
             for valid_images, valid_labels in val_dataset:
