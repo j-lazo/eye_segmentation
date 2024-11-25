@@ -5,8 +5,7 @@ import cv2
 import random 
 from tqdm import tqdm
 import pandas as pd
-from tensorflow.keras.layers import *
-from tensorflow.keras.models import Model
+from tensorflow.python.client import device_lib
 
 from datetime import datetime
 import csv
@@ -23,6 +22,7 @@ import yaml
 from utils import data_loaders as dl
 from models import Res_UNet as res_unet
 from utils import loss_functions as lf
+
 
 def custome_train(model, train_dataset, results_directory, new_results_id, epochs=2, learning_rate=0.001, 
                    val_dataset=None,patience=10):
@@ -110,7 +110,7 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
             model.save(checkpoint_filepath)
 
         if wait >= patience:
-            print('Early stopping triggered: wait time > patience')
+            print(f'Early stopping triggered at epoch {epoch}: wait time > patience')
             model.save(checkpoint_filepath)
             break
 
@@ -126,23 +126,38 @@ def main(_argv):
     path_annotations = FLAGS.path_annotations
     project_folder = FLAGS.project_folder
     name_model = FLAGS.name_model
+    augmentation_functions = FLAGS.augmentation_functions
+
+    if augmentation_functions == ['all']:
+        augmentation_functions = ['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
+                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness']
+        
     #  Hyperparameters 
     lr = FLAGS.learning_rate
     epochs = FLAGS.max_epochs
     img_size = FLAGS.image_size
     batch_size = FLAGS.batch_size
     num_filters = FLAGS.num_filers
+    
+    list_names_gpus = list()
+    devices = device_lib.list_local_devices()
+    for device in devices:
+        if device.device_type == 'GPU':
+            desci = device.physical_device_desc
+            print(desci.split('name: ')[-1].split(','))
+            list_names_gpus.append(desci.split('name: ')[-1].split(',')[0])
+
     physical_devices = tf.config.list_physical_devices('GPU')
     for gpu in physical_devices:
         print("Name:", gpu.name, "  Type:", gpu.device_type)
 
+    print('List names GPUs:', list_names_gpus)
     print("Num GPUs:", len(physical_devices))
     print(physical_devices)
-    print('TF Version:', tf.__version__)
+    version_tf = tf.__version__
+    print('TF Version:', version_tf)
     
-
     list_patient_cases = os.listdir(path_dataset)
-
     list_patient_cases = [f for f in list_patient_cases if os.path.isdir(os.path.join(path_dataset, f))]
     print(len(list_patient_cases))
     seed = 10
@@ -156,7 +171,6 @@ def main(_argv):
 
     list_train_cases = dl.build_list_dict_nerves(path_dataset, train_cases, only_images=False, nerve_layer_imgs=True)
     random.shuffle(list_train_cases)
-    list_train_cases = list_train_cases[:5000]
     list_val_cases = dl.build_list_dict_nerves(path_dataset, val_cases, only_images=False)
     list_test_cases = dl.build_list_dict_nerves(path_dataset, test_cases)
 
@@ -184,16 +198,19 @@ def main(_argv):
     if not os.path.isdir(results_directory):
         os.mkdir(results_directory)
 
-    # Save Training details in YAMLß
+    # Save Training details in YAML
 
     patermets_traning = {'Model name':name_model, 
                          'Type of training': 'custome-training', 
+                         'GPUs names': list_names_gpus, 
                          'training date': training_time.strftime("%d_%m_%Y_%H_%M"), 
                          'learning rate':lr, 
                          'batch size': batch_size, 
                          'image input size': img_size,
                          'num filters': num_filters, 
                          'dataset': os.path.split(path_dataset)[-1], 
+                         'augmentation operations': augmentation_functions,
+                         'TF Version': version_tf,
                          'train_cases':train_cases, 
                          'val_cases':val_cases, 
                          'test_cases':test_cases}
@@ -294,6 +311,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('image_size', 64, 'input impage size')
     flags.DEFINE_integer('batch_size', 8, 'batch size')
     flags.DEFINE_list('num_filers', [32,64,128,256,512,1024], 'mumber of filters per layer')
+    flags.DEFINE_list('augmentation_functions', ['all'], 'mumber of filters per layer')
 
     flags.DEFINE_string('type_training', '', 'eager_train or custom_training')
     flags.DEFINE_string('results_dir', os.path.join(os.getcwd(), 'results'), 'directory to save the results')
