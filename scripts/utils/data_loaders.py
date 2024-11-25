@@ -65,6 +65,7 @@ def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve
 
     return list_cases
 
+
 def read_img(dir_image, img_size=(256, 256)):
     path_img = dir_image.decode()
     original_img = cv2.imread(path_img)
@@ -82,6 +83,128 @@ def read_mask(path, img_size=(256, 256), thresh_value=127):
     x = x/255.0
     x = np.expand_dims(x, axis=-1)
     return x
+
+
+def adjust_brightness(image, gamma=1.0):
+    image = image * 255.
+    image = image.astype(np.uint8)
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    
+    return cv2.LUT(image, table)/255
+
+def add_salt_and_pepper_noise(image, noise_ratio=0.05):
+    # salt & pepepr noise
+    noisy_image = image.copy()
+    h, w, c = noisy_image.shape
+    noisy_pixels = int(h * w * noise_ratio)
+
+    for _ in range(noisy_pixels):
+        row, col = np.random.randint(0, h), np.random.randint(0, w)
+        if np.random.rand() < 0.5:
+            noisy_image[row, col] = [0, 0, 0] 
+        else:
+            noisy_image[row, col] = [1, 1, 1]
+
+    return noisy_image
+    
+def add_gaussian_noise(image, mean=0, std=0.5):
+    # gausian_noise 
+    image = image * 255.
+    image = image.astype(np.uint8)
+    noise = np.random.normal(mean, std, image.shape).astype(np.uint8)
+    noisy_image = cv2.add(image, noise)
+    return noisy_image/255 
+
+def rotate_90(img, mask):
+    # roatation 90
+    rows, cols, ch = img.shape
+    rot1 = cv2.getRotationMatrix2D((cols/2,rows/2), 90, 1)
+    img = cv2.warpAffine(img, rot1, (cols, rows))
+    mask = cv2.warpAffine(mask, rot1, (cols, rows))
+    mask = np.expand_dims(mask,axis=-1)
+
+    return img, mask
+
+def rotate_180(img, mask):
+    # roatation 180
+    rows, cols, ch = img.shape
+    rot2 = cv2.getRotationMatrix2D((cols/2,rows/2), 180, 1)
+    img = cv2.warpAffine(img, rot2, (cols, rows))
+    mask = cv2.warpAffine(mask, rot2, (cols, rows))
+    mask = np.expand_dims(mask,axis=-1)
+    return img, mask
+
+def rotate_270(img, mask):
+    # rotation 270
+    rows, cols, ch = img.shape
+    rot3 = cv2.getRotationMatrix2D((cols/2,rows/2), 270, 1)
+    img = cv2.warpAffine(img, rot3, (cols, rows))
+    mask = cv2.warpAffine(mask, rot3, (cols, rows))
+    mask = np.expand_dims(mask,axis=-1)
+    return img, mask
+
+def random_rotate(img, mask):
+    choice = random.randint(0,2)
+    if choice == 0:
+        img, mask = rotate_90(img, mask)
+
+    elif choice == 1:
+        img, mask = rotate_180(img, mask)
+
+    elif choice == 2:
+        img, mask = rotate_270(img, mask)
+
+    return img, mask
+
+def flip_vertical(img, mask):
+    # vertical flip 
+    img = cv2.flip(img, 1)
+    mask = cv2.flip(mask, 1)
+    mask = np.expand_dims(mask,axis=-1)
+    return img, mask
+
+def flip_horizontal(img, mask):
+    # horizontal flip 
+    img = cv2.flip(img, 0)
+    mask = cv2.flip(mask, 0)
+    mask = np.expand_dims(mask,axis=-1)
+    return img, mask
+
+def augment_img_and_mask(img, mask, augmentation_functions=['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
+                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness'], thresh_value=0.35):
+    
+
+    choice = random.choice(augmentation_functions)
+    if choice == 'None':
+        pass
+    elif choice == 'rotate_90':
+        img, mask = rotate_90(img, mask)
+
+    elif choice == 'rotate_180':
+        img, mask = rotate_180(img, mask)
+
+    elif choice == 'rotate_270':
+        img, mask = rotate_270(img, mask)
+
+    elif choice == 'flip_vertical':
+        img, mask = flip_horizontal(img, mask)
+
+    elif choice == 'flip_horizontal':
+        img, mask = flip_horizontal(img, mask)
+
+    elif choice == 'add_salt_and_pepper_noise':
+         img = add_salt_and_pepper_noise(img)
+
+    elif choice == 'add_gaussian_noise':
+        img = add_gaussian_noise(img)
+
+    elif choice == 'adjust_brightness':
+        img, mask = random_rotate(img, mask)
+        gamma = random.choice([0.85, 0.9, 1.1, 1.2, 1.3, 1.4, 1.5])
+        img = adjust_brightness(img, gamma)
+
+    return img, mask
 
 
 # TF dataset
@@ -128,92 +251,6 @@ def tf_dataset(annotations_dict, batch_size=8, img_size=256, training_mode=False
         dataset = dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
         return dataset
     
-    def adjust_brightness(image, gamma=1.0):
-        image = image * 255.
-        image = image.astype(np.uint8)
-        invGamma = 1.0 / gamma
-        table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
-        
-        return cv2.LUT(image, table)/255
-    
-    def add_salt_and_pepper_noise(image, noise_ratio=0.05):
-        noisy_image = image.copy()
-        h, w, c = noisy_image.shape
-        noisy_pixels = int(h * w * noise_ratio)
-
-        for _ in range(noisy_pixels):
-            row, col = np.random.randint(0, h), np.random.randint(0, w)
-            if np.random.rand() < 0.5:
-                noisy_image[row, col] = [0, 0, 0] 
-            else:
-                noisy_image[row, col] = [1, 1, 1]
-
-        return noisy_image
-        
-    def add_gaussian_noise(image, mean=0, std=0.5):
-        image = image * 255.
-        image = image.astype(np.uint8)
-        noise = np.random.normal(mean, std, image.shape).astype(np.uint8)
-        noisy_image = cv2.add(image, noise)
-        return noisy_image/255 
-
-    def augment_img_and_mask(img, mask, thresh_value=0.35):
-        rows, cols, ch = img.shape
-        choice = random.randint(0, 7)
-        if choice == 0:
-            # roatation 90
-            rot1 = cv2.getRotationMatrix2D((cols/2,rows/2), 90, 1)
-            img = cv2.warpAffine(img, rot1, (cols, rows))
-            mask = cv2.warpAffine(mask, rot1, (cols, rows))
-            mask = np.expand_dims(mask,axis=-1)
-
-        elif choice == 1:
-            # roatation 180
-            rot2 = cv2.getRotationMatrix2D((cols/2,rows/2), 180, 1)
-            img = cv2.warpAffine(img, rot2, (cols, rows))
-            mask = cv2.warpAffine(mask, rot2, (cols, rows))
-            mask = np.expand_dims(mask,axis=-1)
-
-        elif choice == 2:
-            # rotation 270
-            rot3 = cv2.getRotationMatrix2D((cols/2,rows/2), 270, 1)
-            img = cv2.warpAffine(img, rot3, (cols, rows))
-            mask = cv2.warpAffine(mask, rot3, (cols, rows))
-            mask = np.expand_dims(mask,axis=-1)
-
-        elif choice == 3:
-            # horizontal flip 
-            img = cv2.flip(img, 0)
-            mask = cv2.flip(mask, 0)
-            mask = np.expand_dims(mask,axis=-1)
-
-        elif choice == 4:
-            # vertical flip 
-            img = cv2.flip(img, 1)
-            mask = cv2.flip(mask, 1)
-            mask = np.expand_dims(mask,axis=-1)
-
-        elif choice == 5:
-            # no augmentation 
-            img = img
-            mask = mask
-
-        elif choice == 6:
-            # salt and paper noise 
-            img = add_salt_and_pepper_noise(img)
-
-        elif choice == 7:
-            # gausian_noise 
-            img = add_gaussian_noise(img)
-
-        if choice in range(0,5):
-            if random.random()<=thresh_value:
-                # change brightness
-                gamma = random.choice([0.85, 0.9, 1.1, 1.2, 1.3, 1.4, 1.5])
-                img = adjust_brightness(img, gamma)
-
-        return img, mask
-
     path_imgs = list()
     path_masks = list()
 
