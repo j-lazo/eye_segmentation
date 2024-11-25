@@ -65,7 +65,6 @@ def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve
 
     return list_cases
 
-# TF dataset
 def read_img(dir_image, img_size=(256, 256)):
     path_img = dir_image.decode()
     original_img = cv2.imread(path_img)
@@ -85,8 +84,9 @@ def read_mask(path, img_size=(256, 256), thresh_value=127):
     return x
 
 
-def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_mode=False, analyze_dataset=False, include_labels=True,
-                        augment=False):
+# TF dataset
+def tf_dataset(annotations_dict, batch_size=8, img_size=256, training_mode=False, analyze_dataset=False, include_labels=True,
+                        augment=False, num_repeats=1):
     img_size = img_size
     def tf_parse(x, y):
         def _parse(x, y):
@@ -225,8 +225,9 @@ def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_m
             path_imgs.append(img_id.get('path_img'))
             path_masks.append(img_id.get('path_mask'))
         dataset = tf.data.Dataset.from_tensor_slices((path_imgs, path_masks))
-        if training_mode and augment:
-            dataset = dataset.repeat(5)
+        if augment:
+            num_repeats = 5
+            dataset = dataset.repeat(num_repeats)
             dataset = dataset.map(tf_parse_augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         else:
             dataset = dataset.map(tf_parse, num_parallel_calls=tf.data.experimental.AUTOTUNE)
@@ -246,6 +247,7 @@ def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_m
     else:
         dataset = dataset.batch(batch_size,  drop_remainder=True)
 
-    print(f'TF dataset with {int(len(path_imgs)/batch_size)} elements and {len(path_imgs)} images')
+    print(f'TF dataset with {int(len(path_imgs*num_repeats)/batch_size)} elements and {len(path_imgs)} images')
+    dataset = dataset.prefetch(1)
 
     return dataset

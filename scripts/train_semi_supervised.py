@@ -22,59 +22,6 @@ from absl.flags import FLAGS
 import yaml
 
 
-# model U-Net
-
-def res_conv_block(x, num_filters):
-    x = tf.keras.layers.Conv2D(num_filters, (3, 3), padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    skip = tf.keras.layers.Conv2D(num_filters, (3, 3), padding="same")(x)
-    skip = tf.keras.layers.Activation("relu")(skip)
-    skip = tf.keras.layers.BatchNormalization()(skip)
-
-    x = tf.keras.layers.Conv2D(num_filters, (3, 3), padding="same")(x)
-    x = tf.keras.layers.BatchNormalization()(x)
-    x = tf.keras.layers.Activation("relu")(x)
-
-    x = tf.keras.layers.Add()([x, skip])
-    x = tf.keras.layers.Activation("relu")(x)
-
-    return x
-
-
-def build_model(input_size, num_filters = [64, 128, 256, 512]):
-    #num_filters = [16, 32, 48, 64]
-    
-    inputs = tf.keras.Input((input_size, input_size, 3))  
-    skip_x = []
-    x = inputs
-
-    ## Encoder
-    for f in num_filters:
-        x = res_conv_block(x, f)
-        skip_x.append(x)
-        x = tf.keras.layers.MaxPool2D((2, 2))(x)
-
-    ## Bridge
-    x = res_conv_block(x, num_filters[-1])
-
-    num_filters.reverse()
-    skip_x.reverse()
-    ## Decoder
-    for i, f in enumerate(num_filters):
-        x = tf.keras.layers.UpSampling2D((2, 2))(x)
-        xs = skip_x[i]
-        x = tf.keras.layers.Concatenate()([x, xs])
-        x = res_conv_block(x, f)
-
-    ## Output
-    x = tf.keras.layers.Conv2D(1, (1, 1), padding="same")(x)
-    x = tf.keras.layers.Activation("sigmoid")(x)
-
-    return Model(inputs, x)
-
-
 def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve_layer_imgs=False, max_samples=None):
     list_cases = list()
     for pattient_case in patient_cases:        
@@ -105,89 +52,6 @@ def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve
                     list_cases.append({'path_img': path_img, 'path_mask':path_mask})    
 
     return list_cases
-
-# TF dataset
-def read_img(dir_image, img_size=(256, 256)):
-    path_img = dir_image.decode()
-    original_img = cv2.imread(path_img)
-    img = cv2.resize(original_img, img_size, interpolation=cv2.INTER_AREA)
-    img = img / 255.
-    return img
-
-
-def read_mask(path, img_size=(256, 256)):
-    thresh = 127
-    path = path.decode()
-    x = cv2.imread(path)
-    x = cv2.cvtColor(x, cv2.COLOR_BGR2GRAY)
-    x = cv2.resize(x, img_size, interpolation=cv2.INTER_AREA)
-    thresh, x = cv2.threshold(x, 128, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)
-    x = x/255.0
-    x = np.expand_dims(x, axis=-1)
-    return x
-
-
-def tf_dataset_semi_sup(annotations_dict, batch_size=8, img_size=256, training_mode=False, analyze_dataset=False, include_labels=True):
-    img_size = img_size
-    def tf_parse(x, y):
-        def _parse(x, y):
-            x = read_img(x, (img_size, img_size))
-            y = read_mask(y, (img_size, img_size))
-            return x, y
-
-        x, y = tf.numpy_function(_parse, [x, y], [tf.float64, tf.float64])
-        x.set_shape([img_size, img_size, 3])
-        y.set_shape([img_size, img_size, 1])
-        return x, y
-    
-    def tf_parse_v2(x):
-        def _parse(x):
-            x = read_img(x, (img_size, img_size))
-            return x
-
-        x = tf.numpy_function(_parse, [x], [tf.float64])
-        #x.set_shape([img_size, img_size, 3])
-        return x
-    
-    def configure_for_performance(dataset, batch_size):
-        dataset = dataset.repeat(1)
-        dataset = dataset.shuffle(buffer_size=10)
-        dataset = dataset.batch(batch_size, drop_remainder=True)        
-        dataset = dataset.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
-        return dataset
-
-
-    path_imgs = list()
-    path_masks = list()
-
-    if training_mode:
-        random.shuffle(annotations_dict)
-    
-    if include_labels:
-        for img_id in annotations_dict:
-            path_imgs.append(img_id.get('path_img'))
-            path_masks.append(img_id.get('path_mask'))
-        dataset = tf.data.Dataset.from_tensor_slices((path_imgs, path_masks))
-        dataset = dataset.map(tf_parse, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    else:
-        for img_id in annotations_dict:
-            path_imgs.append(img_id.get('path_img'))
-        dataset = tf.data.Dataset.from_tensor_slices((path_imgs))
-        dataset = dataset.map(tf_parse_v2, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-
-    
-    if analyze_dataset:
-        filenames_ds = tf.data.Dataset.from_tensor_slices(path_imgs)
-        dataset = tf.data.Dataset.zip(dataset, filenames_ds)
-
-    if training_mode:
-        dataset = configure_for_performance(dataset, batch_size=batch_size)
-    else:
-        dataset = dataset.batch(batch_size,  drop_remainder=True)
-
-    print(f'TF dataset with {int(len(path_imgs)/batch_size)} elements and {len(path_imgs)} images')
-
-    return dataset
 
 
 def train_semi_sup(model, teacher_model, train_dataset, results_directory, new_results_id, epochs=2, learning_rate=0.001, 
@@ -346,8 +210,8 @@ def main(_argv):
     list_val_cases = build_list_dict_nerves(path_dataset, val_cases, only_images=False)
     list_test_cases = build_list_dict_nerves(path_dataset, test_cases)
 
-    train_ds = tf_dataset_semi_sup(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size, include_labels=False)
-    val_ds = tf_dataset_semi_sup(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    train_ds = tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size, include_labels=False)
+    val_ds = tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
     
     opt = tf.keras.optimizers.Adam(lr)
     metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), dice_coef]
@@ -422,7 +286,7 @@ def main(_argv):
 
     # run the test 
 
-    new_test_ds = tf_dataset_semi_sup(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
+    new_test_ds = tf_dataset(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
 
     name_files = list()
     dsc_val_list = list()

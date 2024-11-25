@@ -160,8 +160,8 @@ def main(_argv):
     list_val_cases = dl.build_list_dict_nerves(path_dataset, val_cases, only_images=False)
     list_test_cases = dl.build_list_dict_nerves(path_dataset, test_cases)
 
-    train_ds = dl.tf_dataset_semi_sup(list_train_cases, batch_size=batch_size, training_mode=True, augment=True, img_size=img_size)
-    val_ds = dl.tf_dataset_semi_sup(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    train_ds = dl.tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, augment=True, img_size=img_size)
+    val_ds = dl.tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
     
     opt = tf.keras.optimizers.Adam(lr)
     metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), lf.dice_coef]
@@ -235,7 +235,7 @@ def main(_argv):
 
     # run the test 
 
-    new_test_ds = dl.tf_dataset_semi_sup(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
+    new_test_ds = dl.tf_dataset(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
     name_files = list()
     dsc_val_list = list()
     plot_figs = False
@@ -293,7 +293,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('max_epochs', 4, 'epochs')
     flags.DEFINE_integer('image_size', 64, 'input impage size')
     flags.DEFINE_integer('batch_size', 8, 'batch size')
-    flags.DEFINE_list('num_filers', [32,64,128,256,512,1024, 1024], 'mumber of filters per layer')
+    flags.DEFINE_list('num_filers', [32,64,128,256,512,1024], 'mumber of filters per layer')
 
     flags.DEFINE_string('type_training', '', 'eager_train or custom_training')
     flags.DEFINE_string('results_dir', os.path.join(os.getcwd(), 'results'), 'directory to save the results')
