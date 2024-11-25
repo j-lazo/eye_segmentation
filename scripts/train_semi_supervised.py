@@ -5,6 +5,7 @@ import cv2
 import random 
 from tqdm import tqdm
 import pandas as pd
+from tensorflow.python.client import device_lib
 
 from datetime import datetime
 import csv
@@ -23,38 +24,6 @@ from models import Res_UNet as res_unet
 from utils import loss_functions as lf
 
 
-def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve_layer_imgs=False, max_samples=None):
-    list_cases = list()
-    for pattient_case in patient_cases:        
-        path_patient_case = os.path.join(path_dataset, pattient_case)
-        images_path = os.path.join(path_patient_case, 'images')
-        masks_path = os.path.join(path_patient_case, 'masks')
-        list_all_imgs = os.listdir(images_path)
-        list_all_masks = os.listdir(masks_path)
-        all_files = os.listdir(path_patient_case)
-        all_files = [f for f in all_files if f.endswith('csv')]
-        annotations_file = all_files[-1]
-        df_p_case = pd.read_csv(os.path.join(path_patient_case, annotations_file))
-        if nerve_layer_imgs:
-            list_imgs = df_p_case[df_p_case['nerve layer'] == 1]['image name'].tolist()
-        else:
-            list_imgs = df_p_case[~df_p_case['density-pre'].isna()]['image name'].tolist()
-        for j, img_name in enumerate(list_imgs):
-            name_image = ''.join([ img_name + '_.jpg'])
-            name_mask = ''.join(['mask_' + img_name + '_.jpg'])
-            if only_images:
-                path_img = os.path.join(images_path, name_image)
-                list_cases.append({'path_img': path_img,})   
-                
-            else:
-                if name_image in list_all_imgs and name_mask in list_all_masks:
-                    path_mask = os.path.join(masks_path, name_mask)
-                    path_img = os.path.join(images_path, name_image)
-                    list_cases.append({'path_img': path_img, 'path_mask':path_mask})    
-
-    return list_cases
-
-
 def train_semi_sup(model, teacher_model, train_dataset, results_directory, new_results_id, epochs=2, learning_rate=0.001, 
                    val_dataset=None,patience=10):
     
@@ -69,12 +38,12 @@ def train_semi_sup(model, teacher_model, train_dataset, results_directory, new_r
             pred_teacher = teacher_model(images, training=False)
             labels = tf.round(pred_teacher)
             predictions = model(images, training=True)
-            loss = dice_coef_loss(y_true=labels, y_pred=predictions)
+            loss = lf.dice_coef_loss(y_true=labels, y_pred=predictions)
         gradients = tape.gradient(loss, model.trainable_variables)
         optimizer.apply_gradients(grads_and_vars=zip(gradients, model.trainable_variables))
 
         train_loss_val = train_loss(loss)
-        train_dsc_val = dice_coef(labels, predictions)
+        train_dsc_val = lf.dice_coef(labels, predictions)
         train_dsc = train_dice_coef(train_dsc_val)
         return train_loss_val, train_dsc
 
@@ -83,10 +52,10 @@ def train_semi_sup(model, teacher_model, train_dataset, results_directory, new_r
         # pred_teacher = teacher_model(images, training=False)
         # labels = tf.argmax(pred_teacher, axis=1)
         predictions = model(images, training=False)
-        v_loss = dice_coef_loss(labels, predictions)
+        v_loss = lf.dice_coef_loss(labels, predictions)
 
         val_loss = valid_loss(v_loss)
-        val_dsc_value = dice_coef(labels, predictions)
+        val_dsc_value = lf.dice_coef(labels, predictions)
         val_dsc = val_dice_coef(val_dsc_value)
         return val_loss, val_dsc
 
@@ -150,21 +119,6 @@ def train_semi_sup(model, teacher_model, train_dataset, results_directory, new_r
     return [train_loss_hist, val_loss_hist, train_dsc_hist, val_dsc_hist]
 
 
-# Loss
-
-@tf.function
-def dice_coef(y_true, y_pred, smooth=1):
-    y_true = tf.cast(y_true, tf.float32)
-    y_pred = tf.cast(y_pred, tf.float32)
-    intersection = tf.keras.backend.sum(y_true * y_pred, axis=[1, 2, 3])
-    union = tf.keras.backend.sum(y_true, axis=[1, 2, 3]) + tf.keras.backend.sum(y_pred, axis=[1, 2, 3])
-    return tf.keras.backend.mean((2. * intersection + smooth) / (union + smooth), axis=0)
-
-@tf.function
-def dice_coef_loss(y_true, y_pred):
-    return 1 - dice_coef(y_true, y_pred)
-
-
 def main(_argv):
     tf.keras.backend.clear_session()
     path_dataset = FLAGS.path_dataset
@@ -178,15 +132,35 @@ def main(_argv):
     batch_size = FLAGS.batch_size
     num_filters = FLAGS.num_filers
     max_num_training_points = FLAGS.max_training_samples
-    #path_pretrained_model = FLAGS.path_teacher_model
-    path_pretrained_model = 'model.keras'
+    path_pretrained_model = FLAGS.path_teacher_model
+    augmentation_functions = FLAGS.augmentation_functions
+
+    if augmentation_functions == ['all']:
+        augmentation_functions = ['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
+                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness']
+
+    list_names_gpus = list()
+    devices = device_lib.list_local_devices()
+    for device in devices:
+        if device.device_type == 'GPU':
+            desci = device.physical_device_desc
+            print(desci.split('name: ')[-1].split(','))
+            list_names_gpus.append(desci.split('name: ')[-1].split(',')[0])
+
+    physical_devices = tf.config.list_physical_devices('GPU')
+    for gpu in physical_devices:
+        print("Name:", gpu.name, "  Type:", gpu.device_type)
+
+    print('List names GPUs:', list_names_gpus)
+
     physical_devices = tf.config.list_physical_devices('GPU')
     for gpu in physical_devices:
         print("Name:", gpu.name, "  Type:", gpu.device_type)
 
     print("Num GPUs:", len(physical_devices))
     print(physical_devices)
-    print('TF Version:', tf.__version__)
+    version_tf = tf.__version__
+    print('TF Version:', version_tf)
     
     trained_model = tf.keras.models.load_model(path_pretrained_model, compile=False)
     print('trained_model laoded from:', path_pretrained_model)
@@ -205,22 +179,22 @@ def main(_argv):
     print('test cases:', len(test_cases))
     list_train_cases = list()
 
-    list_train_cases = build_list_dict_nerves(path_dataset, train_cases, only_images=True, nerve_layer_imgs=True)
+    list_train_cases = dl.build_list_dict_nerves(path_dataset, train_cases, only_images=True, nerve_layer_imgs=True)
     random.shuffle(list_train_cases)
     list_train_cases = list_train_cases[:max_num_training_points]
-    list_val_cases = build_list_dict_nerves(path_dataset, val_cases, only_images=False)
-    list_test_cases = build_list_dict_nerves(path_dataset, test_cases)
+    list_val_cases = dl.build_list_dict_nerves(path_dataset, val_cases, only_images=False)
+    list_test_cases = dl.build_list_dict_nerves(path_dataset, test_cases)
 
     train_ds = dl.tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size, include_labels=False)
     val_ds = dl.tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
     
     opt = tf.keras.optimizers.Adam(lr)
-    metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), dice_coef]
+    metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), lf.dice_coef]
     # Compile the model 
     model = res_unet.build_model(img_size, num_filters=num_filters)
     #model.summary()
     print('Compiling model')
-    model.compile(optimizer=opt, loss=dice_coef_loss, metrics=metrics)
+    model.compile(optimizer=opt, loss=lf.dice_coef_loss, metrics=metrics)
 
     training_time = datetime.now()
     new_results_id = ''.join([name_model, '_semi_supervised'
@@ -238,14 +212,16 @@ def main(_argv):
     # Save Training details in YAML
 
     patermets_traning = {'Model name':name_model, 
-                         'Type of training': 'semi-supervised', 
-                         'pre-trained model': path_pretrained_model,
+                         'Type of training': 'custome-training', 
+                         'GPUs names': list_names_gpus, 
                          'training date': training_time.strftime("%d_%m_%Y_%H_%M"), 
                          'learning rate':lr, 
                          'batch size': batch_size, 
                          'image input size': img_size,
                          'num filters': num_filters, 
-                         'dataset': os.path.split(path_dataset)[-1],
+                         'dataset': os.path.split(path_dataset)[-1], 
+                         'augmentation operations': augmentation_functions,
+                         'TF Version': version_tf,
                          'train_cases':train_cases, 
                          'val_cases':val_cases, 
                          'test_cases':test_cases}
@@ -305,8 +281,8 @@ def main(_argv):
         pred_mask = predictions[0]
         #resize_prediction = cv2.resize()
         #compare resized image 
-        dsc_value = dice_coef(label_batch, predictions)
-        dsc_value_teach = dice_coef(label_batch, predictions_teach)
+        dsc_value = lf.dice_coef(label_batch, predictions)
+        dsc_value_teach = lf.dice_coef(label_batch, predictions_teach)
         dsc_val_list.append(dsc_value.numpy())
         dsc_val_list_teacher.append(dsc_value_teach.numpy())
         name_file = file_path.numpy()[0].decode("utf-8")
@@ -353,6 +329,8 @@ if __name__ == '__main__':
     flags.DEFINE_integer('image_size', 64, 'input impage size')
     flags.DEFINE_integer('batch_size', 8, 'batch size')
     flags.DEFINE_list('num_filers', [32,64,128,256,512], 'mumber of filters per layer')
+    flags.DEFINE_list('augmentation_functions', ['all'], 'mumber of filters per layer')
+
 
     flags.DEFINE_string('type_training', '', 'eager_train or custom_training')
     flags.DEFINE_string('results_dir', os.path.join(os.getcwd(), 'results'), 'directory to save the results')
