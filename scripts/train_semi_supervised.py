@@ -5,8 +5,6 @@ import cv2
 import random 
 from tqdm import tqdm
 import pandas as pd
-from tensorflow.keras.layers import *
-from tensorflow.keras.models import Model
 
 from datetime import datetime
 import csv
@@ -20,6 +18,9 @@ from sklearn.model_selection import train_test_split
 from absl import app, flags
 from absl.flags import FLAGS
 import yaml
+from utils import data_loaders as dl
+from models import Res_UNet as res_unet
+from utils import loss_functions as lf
 
 
 def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve_layer_imgs=False, max_samples=None):
@@ -210,13 +211,13 @@ def main(_argv):
     list_val_cases = build_list_dict_nerves(path_dataset, val_cases, only_images=False)
     list_test_cases = build_list_dict_nerves(path_dataset, test_cases)
 
-    train_ds = tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size, include_labels=False)
-    val_ds = tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    train_ds = dl.tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, img_size=img_size, include_labels=False)
+    val_ds = dl.tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
     
     opt = tf.keras.optimizers.Adam(lr)
     metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), dice_coef]
     # Compile the model 
-    model = build_model(img_size, num_filters=num_filters)
+    model = res_unet.build_model(img_size, num_filters=num_filters)
     #model.summary()
     print('Compiling model')
     model.compile(optimizer=opt, loss=dice_coef_loss, metrics=metrics)
@@ -286,7 +287,7 @@ def main(_argv):
 
     # run the test 
 
-    new_test_ds = tf_dataset(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
+    new_test_ds = dl.tf_dataset(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
 
     name_files = list()
     dsc_val_list = list()
