@@ -92,8 +92,8 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
                 values=[('val_dsc',val_metric),('val_loss',v_loss)]
                 progBar.update(idX+1, values=values)
         
-        val_loss_hist.append(v_loss.numpy())
-        val_dsc_hist.append(val_metric.numpy())
+            val_loss_hist.append(v_loss.numpy())
+            val_dsc_hist.append(val_metric.numpy())
         
         wait += 1
         if epoch == 0:
