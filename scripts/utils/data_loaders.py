@@ -6,7 +6,7 @@ import tensorflow as tf
 import numpy as np
 
 
-def build_list_dict_dendritic_cells(path_dataset, patient_cases, only_images=False, max_samples=None):
+def build_list_dict_dendritic_cells(path_dataset, patient_cases, only_images=False):
     list_cases = list()
     for pattient_case in patient_cases:        
         path_patient_case = os.path.join(path_dataset, pattient_case)
@@ -34,7 +34,8 @@ def build_list_dict_dendritic_cells(path_dataset, patient_cases, only_images=Fal
     
     return list_cases
 
-def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve_layer_imgs=False, max_samples=None):
+
+def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, extra_data=False, max_extra_samples=None):
     list_cases = list()
     for pattient_case in patient_cases:        
         path_patient_case = os.path.join(path_dataset, pattient_case)
@@ -45,11 +46,24 @@ def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, nerve
         all_files = os.listdir(path_patient_case)
         all_files = [f for f in all_files if f.endswith('csv')]
         annotations_file = all_files[-1]
+        
         df_p_case = pd.read_csv(os.path.join(path_patient_case, annotations_file))
-        if nerve_layer_imgs:
-            list_imgs = df_p_case[df_p_case['nerve layer'] == 1]['image name'].tolist()
-        else:
-            list_imgs = df_p_case[~df_p_case['density-pre'].isna()]['image name'].tolist()
+        list_imgs = df_p_case[~df_p_case['density-pre'].isna()]['image name'].tolist()
+        list_extra_imgs = list()
+
+        if extra_data == 'nerve layer':
+            list_extra_imgs = df_p_case[df_p_case['nerve layer'] == 1]['image name'].tolist()
+        elif extra_data == 'dendritic cells':
+            list_extra_imgs = df_p_case[~df_p_case['total num cells'].isna()]['image name'].tolist()
+        elif extra_data == 'All':
+            list_extra_imgs = df_p_case['image name'].tolist()
+        
+        if max_extra_samples:
+            random.shuffle(list_extra_imgs)
+            list_extra_imgs = list_extra_imgs[:max_extra_samples]
+
+        list_imgs += list_extra_imgs
+
         for j, img_name in enumerate(list_imgs):
             name_image = ''.join([ img_name + '_.jpg'])
             name_mask = ''.join(['mask_' + img_name + '_.jpg'])
