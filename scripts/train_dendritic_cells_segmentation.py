@@ -5,10 +5,10 @@ import cv2
 import random 
 from tqdm import tqdm
 import pandas as pd
+from tensorflow.python.client import device_lib
 from datetime import datetime
 import csv
 import matplotlib.pyplot as plt
-
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import recall_score
 import keras.backend as K
@@ -20,7 +20,6 @@ import yaml
 from utils import data_loaders as dl
 from models import Res_UNet as res_unet
 from utils import loss_functions as lf
-
 
 
 def custome_train(model, train_dataset, results_directory, new_results_id, epochs=2, learning_rate=0.001, 
@@ -46,8 +45,6 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
 
     @tf.function
     def valid_step(images, labels):
-        # pred_teacher = teacher_model(images, training=False)
-        # labels = tf.argmax(pred_teacher, axis=1)
         predictions = model(images, training=False)
         v_loss = lf.dice_coef_loss(labels, predictions)
 
@@ -79,11 +76,9 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
     for epoch in range(epochs):
         print("\nepoch {}/{}".format(epoch+1,epochs))
         progBar = tf.keras.utils.Progbar(num_training_samples, stateful_metrics=metrics_names)
-        step = 0
         for idX, batch_ds in enumerate(train_dataset):
             train_images = batch_ds[0]
             train_labels = batch_ds[1]
-            step += 1
             train_loss_value, training_metric = train_step(train_images, train_labels)
             values=[('train_dsc', training_metric), ('train_loss',train_loss_value)]
             progBar.update(idX+1, values=values) 
@@ -140,51 +135,57 @@ def get_training_dictionary(path_training_dataset):
 def main(_argv):
     tf.keras.backend.clear_session()
     path_dataset = FLAGS.path_dataset
-    path_annotations_training = FLAGS.path_annotations_training
+    path_annotations = FLAGS.path_annotations
     project_folder = FLAGS.project_folder
     name_model = FLAGS.name_model
+    augmentation_functions = FLAGS.augmentation_functions
+
+    if augmentation_functions == ['all']:
+        augmentation_functions = ['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
+                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness']
+        
     #  Hyperparameters 
     lr = FLAGS.learning_rate
     epochs = FLAGS.max_epochs
     img_size = FLAGS.image_size
     batch_size = FLAGS.batch_size
     num_filters = FLAGS.num_filers
+    
+    list_names_gpus = list()
+    devices = device_lib.list_local_devices()
+    for device in devices:
+        if device.device_type == 'GPU':
+            desci = device.physical_device_desc
+            list_names_gpus.append(desci.split('name: ')[-1].split(',')[0])
+
     physical_devices = tf.config.list_physical_devices('GPU')
     for gpu in physical_devices:
         print("Name:", gpu.name, "  Type:", gpu.device_type)
 
+    print('List names GPUs:', list_names_gpus)
     print("Num GPUs:", len(physical_devices))
     print(physical_devices)
-    print('TF Version:', tf.__version__)
+    version_tf = tf.__version__
+    print('TF Version:', version_tf)
     
     list_patient_cases = os.listdir(path_dataset)
     list_patient_cases = [f for f in list_patient_cases if os.path.isdir(os.path.join(path_dataset, f))]
-
-    list_patient_cases_with_masks = list()
-
-    for patient_id in list_patient_cases:
-        path_patient_dir = os.path.join(path_dataset, patient_id)
-        list_files_dendritic = os.listdir(path_patient_dir)
-        if 'new_masks_dendritic_cells' in list_files_dendritic: # 'location_cells'
-            list_patient_cases_with_masks.append(patient_id)
-
-
+    print(len(list_patient_cases))
     seed = 10
-    train_cases, val_test_cases = train_test_split(list_patient_cases_with_masks, test_size=0.30, random_state=seed)
+    train_cases, val_test_cases = train_test_split(list_patient_cases, test_size=0.30, random_state=seed)
     val_cases, test_cases = train_test_split(val_test_cases, test_size=0.40, random_state=seed)
 
     print('train cases:', len(train_cases))
     print('val cases:', len(val_cases))
     print('test cases:', len(test_cases))
 
-    list_train_cases = get_training_dictionary(path_annotations_training)
-
-    val_cases = val_cases + train_cases
+    list_train_cases = dl.build_list_dict_dendritic_cells(path_dataset, train_cases, only_images=False)
+    random.shuffle(list_train_cases)
     list_val_cases = dl.build_list_dict_dendritic_cells(path_dataset, val_cases, only_images=False)
     list_test_cases = dl.build_list_dict_dendritic_cells(path_dataset, test_cases)
 
-    train_ds = dl.tf_dataset_semi_sup(list_train_cases, batch_size=batch_size, training_mode=True, augment=True, img_size=img_size)
-    val_ds = dl.tf_dataset_semi_sup(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    train_ds = dl.tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, augment=True, img_size=img_size, augmentation_functions=augmentation_functions)
+    val_ds = dl.tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size, augmentation_functions=augmentation_functions)
     
     opt = tf.keras.optimizers.Adam(lr)
     metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), lf.dice_coef]
@@ -212,19 +213,21 @@ def main(_argv):
 
     patermets_traning = {'Model name':name_model, 
                          'Type of training': 'custome-training', 
+                         'GPUs names': list_names_gpus, 
                          'training date': training_time.strftime("%d_%m_%Y_%H_%M"), 
                          'learning rate':lr, 
                          'batch size': batch_size, 
                          'image input size': img_size,
                          'num filters': num_filters, 
                          'dataset': os.path.split(path_dataset)[-1], 
-                         'train_cases':'ALL', 
+                         'augmentation operations': augmentation_functions,
+                         'train_cases':train_cases, 
                          'val_cases':val_cases, 
                          'test_cases':test_cases}
 
     path_yaml_file = os.path.join(results_directory, 'parameters_training.yaml')
     with open(path_yaml_file, 'w') as file:
-        yaml.dump(patermets_traning, file)
+        yaml.dump(patermets_traning, file, sort_keys=False)
 
     train_history = custome_train(model, train_ds, results_directory=results_directory, new_results_id=new_results_id, epochs=epochs, val_dataset=val_ds)
 
@@ -259,7 +262,7 @@ def main(_argv):
 
     # run the test 
 
-    new_test_ds = dl.tf_dataset_semi_sup(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
+    new_test_ds = dl.tf_dataset(list_test_cases, batch_size=1, training_mode=False, img_size=img_size, analyze_dataset=True)
     name_files = list()
     dsc_val_list = list()
     plot_figs = False
