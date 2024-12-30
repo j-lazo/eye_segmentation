@@ -75,7 +75,7 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
     metrics_names = ['train_dsc','train_loss', 'train_acc', 'val_dsc', 'val_loss', 'val_acc'] 
     # start training
     num_training_samples = [i for i,_ in enumerate(train_dataset)][-1] + 1
-    checkpoint_filepath = os.path.join(results_directory, new_results_id + "_model_smi_supervised.h5")
+    checkpoint_filepath = os.path.join(results_directory, new_results_id + "_model_supervised.h5")
 
     for epoch in range(epochs):
         print("\nepoch {}/{}".format(epoch+1,epochs))
@@ -144,7 +144,6 @@ def main(_argv):
     for device in devices:
         if device.device_type == 'GPU':
             desci = device.physical_device_desc
-            print(desci.split('name: ')[-1].split(','))
             list_names_gpus.append(desci.split('name: ')[-1].split(',')[0])
 
     physical_devices = tf.config.list_physical_devices('GPU')
@@ -174,8 +173,8 @@ def main(_argv):
     list_val_cases = dl.build_list_dict_nerves(path_dataset, val_cases, only_images=False)
     list_test_cases = dl.build_list_dict_nerves(path_dataset, test_cases)
 
-    train_ds = dl.tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, augment=True, img_size=img_size)
-    val_ds = dl.tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size)
+    train_ds = dl.tf_dataset(list_train_cases, batch_size=batch_size, training_mode=True, augment=True, img_size=img_size, augmentation_functions=augmentation_functions)
+    val_ds = dl.tf_dataset(list_val_cases, batch_size=batch_size, training_mode=True, img_size=img_size, augmentation_functions=augmentation_functions)
     
     opt = tf.keras.optimizers.Adam(lr)
     metrics = ["acc", tf.keras.metrics.Recall(), tf.keras.metrics.Precision(), lf.dice_coef]
@@ -217,7 +216,7 @@ def main(_argv):
 
     path_yaml_file = os.path.join(results_directory, 'parameters_training.yaml')
     with open(path_yaml_file, 'w') as file:
-        yaml.dump(patermets_traning, file)
+        yaml.dump(patermets_traning, file, sort_keys=False)
 
     train_history = custome_train(model, train_ds, results_directory=results_directory, new_results_id=new_results_id, epochs=epochs, val_dataset=val_ds)
 
