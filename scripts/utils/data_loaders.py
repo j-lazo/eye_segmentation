@@ -172,9 +172,8 @@ def flip_horizontal(img, mask):
     return img, mask
 
 def augment_img_and_mask(img, mask, augmentation_functions=['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
-                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness'], thresh_value=0.35):
-    
-
+                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness']):
+        
     choice = random.choice(augmentation_functions)
     if choice == 'None':
         pass
@@ -209,7 +208,10 @@ def augment_img_and_mask(img, mask, augmentation_functions=['None', 'rotate_90',
 
 # TF dataset
 def tf_dataset(annotations_dict, batch_size=8, img_size=256, training_mode=False, analyze_dataset=False, include_labels=True,
-                        augment=False, num_repeats=1):
+                        augment=False, num_repeats=1, augmentation_functions=['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
+                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness']):
+    
+    AUGMENT_FUNCTONS = augmentation_functions
     img_size = img_size
     def tf_parse(x, y):
         def _parse(x, y):
@@ -226,7 +228,7 @@ def tf_dataset(annotations_dict, batch_size=8, img_size=256, training_mode=False
         def _parse(x, y):
             x = read_img(x, (img_size, img_size))
             y = read_mask(y, (img_size, img_size))
-            x, y = augment_img_and_mask(x, y)
+            x, y = augment_img_and_mask(x, y, AUGMENT_FUNCTONS)
             return x, y
 
         x, y = tf.numpy_function(_parse, [x, y], [tf.float64, tf.float64])
@@ -284,7 +286,7 @@ def tf_dataset(annotations_dict, batch_size=8, img_size=256, training_mode=False
     else:
         dataset = dataset.batch(batch_size,  drop_remainder=True)
 
-    print(f'TF dataset with {int(len(path_imgs*num_repeats)/batch_size)} elements and {len(path_imgs)} images')
+    print(f'TF dataset with {int(len(path_imgs*num_repeats)/batch_size)} batches and {len(path_imgs)} images')
     dataset = dataset.prefetch(1)
 
     return dataset
