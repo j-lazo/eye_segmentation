@@ -6,7 +6,7 @@ import tensorflow as tf
 import numpy as np
 
 
-def build_list_dict_dendritic_cells(path_dataset, patient_cases, only_images=False):
+def build_list_dict_dendritic_cells(path_dataset, patient_cases, only_images=False, extra_data=False, max_extra_samples=None):
     list_cases = list()
     for pattient_case in patient_cases:        
         path_patient_case = os.path.join(path_dataset, pattient_case)
@@ -18,19 +18,37 @@ def build_list_dict_dendritic_cells(path_dataset, patient_cases, only_images=Fal
         all_files = os.listdir(path_patient_case)
         all_files = [f for f in all_files if f.endswith('csv')]
         annotations_file = all_files[-1]
-        
-        for j, name_mask in enumerate(list_all_masks):
-            name_image = name_mask.replace('mask_dendritic_', '')
-            path_mask = os.path.join(masks_path, name_mask)
-            path_img = os.path.join(images_path, name_image)
 
+        df_p_case = pd.read_csv(os.path.join(path_patient_case, annotations_file))
+        list_imgs = df_p_case[~df_p_case['total num cells'].isna()]['image name'].tolist()
+        list_extra_imgs = list()
+
+        if extra_data == 'nerve layer':
+            list_extra_imgs = df_p_case[df_p_case['nerve layer'] == 1]['image name'].tolist()
+        elif extra_data == 'nerve density':
+            list_extra_imgs = df_p_case[~df_p_case['density-pre'].isna()]['image name'].tolist()
+        elif extra_data == 'All':
+            list_extra_imgs = df_p_case['image name'].tolist()
+        
+        if max_extra_samples:
+            random.shuffle(list_extra_imgs)
+            list_extra_imgs = list_extra_imgs[:max_extra_samples]
+
+        list_imgs += list_extra_imgs
+
+        for j, img_name in enumerate(list_imgs):
+            name_image = ''.join([img_name, '_.jpg'])
+            name_mask = ''.join(['mask_dendritic_', img_name, '_.jpg'])
+            
             if only_images:
                 path_img = os.path.join(images_path, name_image)
                 list_cases.append({'path_img': path_img,})   
                 
             else:
-                if os.path.isfile(path_img) and os.path.isfile(path_mask):
-                    list_cases.append({'path_img': path_img, 'path_mask':path_mask})    
+                if name_image in list_all_imgs and name_mask in list_all_masks:
+                    path_mask = os.path.join(masks_path, name_mask)
+                    path_img = os.path.join(images_path, name_image)
+                    list_cases.append({'path_img': path_img, 'path_mask':path_mask})     
     
     return list_cases
 
@@ -65,8 +83,8 @@ def build_list_dict_nerves(path_dataset, patient_cases, only_images=False, extra
         list_imgs += list_extra_imgs
 
         for j, img_name in enumerate(list_imgs):
-            name_image = ''.join([ img_name + '_.jpg'])
-            name_mask = ''.join(['mask_' + img_name + '_.jpg'])
+            name_image = ''.join([ img_name, '_.jpg'])
+            name_mask = ''.join(['mask_', img_name, '_.jpg'])
             if only_images:
                 path_img = os.path.join(images_path, name_image)
                 list_cases.append({'path_img': path_img,})   
