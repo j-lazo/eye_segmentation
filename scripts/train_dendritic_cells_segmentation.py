@@ -167,13 +167,19 @@ def main(_argv):
     print(physical_devices)
     version_tf = tf.__version__
     print('TF Version:', version_tf)
-    
-    list_patient_cases = os.listdir(path_dataset)
-    list_patient_cases = [f for f in list_patient_cases if os.path.isdir(os.path.join(path_dataset, f))]
-    print(len(list_patient_cases))
+    list_all_patient_cases = os.listdir(path_dataset)
+    list_all_patient_cases = [f for f in list_all_patient_cases if os.path.isdir(os.path.join(path_dataset, f))]
+    # select patient cases that have annotations of dendritic cells
+    list_patient_cases = list()
+    for p_case in list_all_patient_cases:
+        list_sub_dir = os.listdir(os.path.join(path_dataset, p_case))
+        if 'new_masks_dendritic_cells' in list_sub_dir: 
+            list_patient_cases.append(p_case)
+
+    print('num patients:', len(list_patient_cases))
     seed = 10
-    train_cases, val_test_cases = train_test_split(list_patient_cases, test_size=0.30, random_state=seed)
-    val_cases, test_cases = train_test_split(val_test_cases, test_size=0.40, random_state=seed)
+    train_cases, val_test_cases = train_test_split(list_patient_cases, test_size=0.20, random_state=seed)
+    val_cases, test_cases = train_test_split(val_test_cases, test_size=0.20, random_state=seed)
 
     print('train cases:', len(train_cases))
     print('val cases:', len(val_cases))
@@ -311,7 +317,7 @@ def main(_argv):
 if __name__ == '__main__':
 
     flags.DEFINE_string('path_dataset', os.path.join(os.getcwd(), 'dataset'), 'directory dataset')
-    flags.DEFINE_string('path_annotations_training', '', 'path annotations')
+    flags.DEFINE_string('path_annotations', '', 'path annotations')
     flags.DEFINE_string('project_folder', os.getcwd(), 'path project folder')
     flags.DEFINE_string('results_directory', os.path.join(os.getcwd(), 'results'), 'path where to save results')
     flags.DEFINE_string('name_model', 'Res-UNet', 'name of the model')
@@ -321,6 +327,7 @@ if __name__ == '__main__':
     flags.DEFINE_integer('image_size', 64, 'input impage size')
     flags.DEFINE_integer('batch_size', 8, 'batch size')
     flags.DEFINE_list('num_filers', [32,64,128,256,512, 1024], 'mumber of filters per layer')
+    flags.DEFINE_list('augmentation_functions', ['all'], 'agumentation functions used')
 
     flags.DEFINE_string('type_training', '', 'eager_train or custom_training')
     flags.DEFINE_string('results_dir', os.path.join(os.getcwd(), 'results'), 'directory to save the results')
