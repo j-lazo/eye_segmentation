@@ -6,11 +6,9 @@ import random
 from tqdm import tqdm
 import pandas as pd
 from tensorflow.python.client import device_lib
-
 from datetime import datetime
 import csv
 import matplotlib.pyplot as plt
-
 from sklearn.metrics import average_precision_score
 from sklearn.metrics import recall_score
 import keras.backend as K
@@ -47,8 +45,6 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
 
     @tf.function
     def valid_step(images, labels):
-        # pred_teacher = teacher_model(images, training=False)
-        # labels = tf.argmax(pred_teacher, axis=1)
         predictions = model(images, training=False)
         v_loss = lf.dice_coef_loss(labels, predictions)
 
@@ -80,11 +76,9 @@ def custome_train(model, train_dataset, results_directory, new_results_id, epoch
     for epoch in range(epochs):
         print("\nepoch {}/{}".format(epoch+1,epochs))
         progBar = tf.keras.utils.Progbar(num_training_samples, stateful_metrics=metrics_names)
-        step = 0
         for idX, batch_ds in enumerate(train_dataset):
             train_images = batch_ds[0]
             train_labels = batch_ds[1]
-            step += 1
             train_loss_value, training_metric = train_step(train_images, train_labels)
             values=[('train_dsc', training_metric), ('train_loss',train_loss_value)]
             progBar.update(idX+1, values=values) 
@@ -166,9 +160,8 @@ def main(_argv):
     print('train cases:', len(train_cases))
     print('val cases:', len(val_cases))
     print('test cases:', len(test_cases))
-    list_train_cases = list()
 
-    list_train_cases = dl.build_list_dict_nerves(path_dataset, train_cases, only_images=False, nerve_layer_imgs=True)
+    list_train_cases = dl.build_list_dict_nerves(path_dataset, train_cases, only_images=False, nerve_layer_imgs=False)
     random.shuffle(list_train_cases)
     list_val_cases = dl.build_list_dict_nerves(path_dataset, val_cases, only_images=False)
     list_test_cases = dl.build_list_dict_nerves(path_dataset, test_cases)
@@ -185,7 +178,8 @@ def main(_argv):
     model.compile(optimizer=opt, loss=lf.dice_coef_loss, metrics=metrics)
 
     training_time = datetime.now()
-    new_results_id = ''.join([name_model, 
+    new_results_id = ''.join(['nerve_segmentation_', 
+                            name_model, 
                             '_lr_',
                             str(lr),
                             '_bs_',
