@@ -178,8 +178,10 @@ def main(_argv):
 
     print('num patients:', len(list_patient_cases))
     seed = 10
+    test_cases = ['70']
+    list_patient_cases.remove('70')
     train_cases, val_test_cases = train_test_split(list_patient_cases, test_size=0.20, random_state=seed)
-    val_cases, test_cases = train_test_split(val_test_cases, test_size=0.20, random_state=seed)
+    val_cases, _ = train_test_split(val_test_cases, test_size=0.20, random_state=seed)
 
     print('train cases:', len(train_cases))
     print('val cases:', len(val_cases))
