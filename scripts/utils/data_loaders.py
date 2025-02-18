@@ -203,6 +203,99 @@ def flip_horizontal(img, mask):
     mask = np.expand_dims(mask,axis=-1)
     return img, mask
 
+
+def roate_points(list_rois, angle, image_shape, radius_x, radius_y):
+    rotated_points = list()
+    w, h, c = image_shape
+    cx = int(w/2)
+    cy = int(h/2)
+    for points in list_rois:
+        x = points[0]
+        y = points[1]
+        xf = points[2]
+        yf = points[3]
+        x_new, y_new = rotate_point((x, y), angle, (cx, cy))
+        qx1, qy1 = rotate_point((xf, yf), angle, (cx, cy))
+        rotated_points.append([int(x_new), int(y_new), int(qx1), int(qy1)])
+    return rotated_points
+
+
+def rotate_point(point, angle, center):
+    """Rotate a point around a given center by an angle in degrees."""
+    angle_rad = np.radians(angle)
+    x, y = point
+    cx, cy = center
+
+    # Translate point to origin
+    x -= cx
+    y -= cy
+
+    # Apply rotation
+    x_new = x * np.cos(angle_rad) - y * np.sin(angle_rad)
+    y_new = x * np.sin(angle_rad) + y * np.cos(angle_rad)
+
+    # Translate back
+    x_new += cx
+    y_new += cy
+
+    return int(x_new), int(y_new)
+
+
+def augment_img_mask_points(img, mask, points, radius_x, radius_y, augmentation_functions=['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
+                        'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness'], choice = None):
+    if not choice:
+        choice = random.choice(augmentation_functions)
+    if choice == 'None':
+        mask = np.expand_dims(mask, -1)
+    elif choice == 'rotate_90':
+        img, mask = rotate_90(img, mask)
+        points = roate_points(points, -90, img.shape, radius_x, radius_y)
+
+    elif choice == 'rotate_180':
+        img, mask = rotate_180(img, mask)
+        points = roate_points(points, 180, img.shape, radius_x, radius_y)
+
+    elif choice == 'rotate_270':
+        img, mask = rotate_270(img, mask)
+        points = roate_points(points, -270, img.shape, radius_x, radius_y)
+
+    elif choice == 'flip_vertical':
+        img, mask = flip_vertical(img, mask)
+        points = flip_points_vertical(points, img.shape)
+
+    elif choice == 'flip_horizontal':
+        img, mask = flip_horizontal(img, mask)
+        points = flip_points_horizonta(points, img.shape)
+
+    elif choice == 'add_salt_and_pepper_noise':
+         img = add_salt_and_pepper_noise(img)
+
+    elif choice == 'add_gaussian_noise':
+        img = add_gaussian_noise(img)
+
+    elif choice == 'adjust_brightness':
+        img, mask = random_rotate(img, mask)
+        gamma = random.choice([0.85, 0.9, 1.1, 1.2, 1.3, 1.4, 1.5])
+        img = adjust_brightness(img, gamma)
+
+    return img, mask, points
+
+
+def flip_points_horizonta(list_rois, image_shape):
+    fliped_points = list()
+    w, h, c = image_shape
+    for points in list_rois:
+        px0 = points[0]
+        py0 = points[1]
+        px1 = points[2]
+        py1 = points[3]
+        py0_f = h - 1 - py0
+        py1_f = h - 1 - py1
+        fliped_points.append([px0, py0_f, px1, py1_f])
+    
+    return fliped_points
+
+
 def augment_img_and_mask(img, mask, augmentation_functions=['None', 'rotate_90', 'rotate_180', 'rotate_270', 'flip_vertical', 'flip_horizontal',
                         'add_salt_and_pepper_noise', 'add_gaussian_noise', 'adjust_brightness']):
         
